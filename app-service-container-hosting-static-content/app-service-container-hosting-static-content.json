@@ -1,0 +1,145 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "site_name": {
+      "type": "String"
+    },
+    "region": {
+      "defaultValue": "centralus",
+      "type": "String"
+    }
+  },
+  "variables": {
+    "storage_name": "[concat(parameters('site_name'),'sa')]",
+    "plan_name": "[concat(parameters('site_name'),'-asp')]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Storage/storageAccounts",
+      "apiVersion": "2019-04-01",
+      "name": "[variables('storage_name')]",
+      "location": "[parameters('region')]",
+      "sku": {
+        "name": "Standard_LRS",
+        "tier": "Standard"
+      },
+      "kind": "StorageV2",
+      "properties": {
+        "supportsHttpsTrafficOnly": true,
+        "accessTier": "Cool"
+      },
+      "resources": [   
+        {
+          "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+          "apiVersion": "2019-04-01",
+          "name": "[concat(variables('storage_name'), '/default/green')]",
+          "dependsOn": [
+            "[resourceId('Microsoft.Storage/storageAccounts', variables('storage_name'))]"
+          ]
+        },
+        {
+          "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+          "apiVersion": "2019-04-01",
+          "name": "[concat(variables('storage_name'), '/default/blue')]",
+          "dependsOn": [
+            "[resourceId('Microsoft.Storage/storageAccounts', variables('storage_name'))]"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "Microsoft.Web/serverfarms",
+      "apiVersion": "2018-02-01",
+      "name": "[variables('plan_name')]",
+      "location": "[parameters('region')]",
+      "sku": {
+        "name": "P1v2"
+      },
+      "kind": "linux",
+      "properties": {
+        "reserved": true
+      }
+    },
+    {
+      "type": "Microsoft.Web/sites",
+      "apiVersion": "2018-11-01",
+      "name": "[parameters('site_name')]",
+      "location": "[parameters('region')]",
+      "dependsOn": [
+          "[resourceId('Microsoft.Web/serverfarms', variables('plan_name'))]"
+      ],
+      "kind": "app,linux,container",
+      "properties": {
+        "enabled": true,
+        "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', variables('plan_name'))]",
+        "siteConfig": {
+          "linuxFxVersion": "DOCKER|nginx",
+          "alwaysOn": true
+        }
+      },
+      "resources": [
+        {
+          "type": "Microsoft.Web/sites/config",
+          "apiVersion": "2018-11-01",
+          "name": "[concat(parameters('site_name'), '/azurestorageaccounts')]",
+          "dependsOn": [
+              "[resourceId('Microsoft.Web/sites', parameters('site_name'))]",
+              "[resourceId('Microsoft.Storage/storageAccounts', variables('storage_name'))]"
+          ],
+          "properties": {
+            "storage": {
+              "type": "AzureBlob",
+              "accountName": "[variables('storage_name')]",
+              "shareName": "green",
+              "accessKey": "[listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('storage_name')), '2019-04-01').keys[0].value]",
+              "mountPath": "/usr/share/nginx/html",
+              "azure-storage-mounts-name": "content",
+              "azure-storage-mounts-path": "/usr/share/nginx/html"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "Microsoft.Web/sites/slots",
+      "apiVersion": "2018-11-01",
+      "name": "[concat(parameters('site_name'), '/blue')]",
+      "location": "[parameters('region')]",
+      "dependsOn": [
+          "[resourceId('Microsoft.Web/serverfarms', variables('plan_name'))]"
+      ],
+      "kind": "app,linux,container",
+      "properties": {
+        "enabled": true,
+        "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', variables('plan_name'))]",
+        "siteConfig": {
+          "linuxFxVersion": "DOCKER|nginx",
+          "alwaysOn": false
+        }
+      },
+      "resources": [
+        {
+          "type": "Microsoft.Web/sites/slots/config",
+          "apiVersion": "2018-11-01",
+          "name": "[concat(parameters('site_name'), '/blue/azurestorageaccounts')]",
+          "dependsOn": [
+              "[resourceId('Microsoft.Web/sites/slots', parameters('site_name'), 'blue')]",
+              "[resourceId('Microsoft.Storage/storageAccounts', variables('storage_name'))]"
+          ],
+          "properties": {
+            "storage": {
+              "type": "AzureBlob",
+              "accountName": "[variables('storage_name')]",
+              "shareName": "blue",
+              "accessKey": "[listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('storage_name')), '2019-04-01').keys[0].value]",
+              "mountPath": "/usr/share/nginx/html",
+              "azure-storage-mounts-name": "content",
+              "azure-storage-mounts-path": "/usr/share/nginx/html"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
